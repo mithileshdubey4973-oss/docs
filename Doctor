@@ -1,0 +1,204 @@
+।
+
+1) App-ready JSON (सिंपल Intents + Responses)
+
+{
+  "bot_name": "HealthAssistant",
+  "language": "hi",
+  "intents": [
+    {
+      "id": "welcome",
+      "utterances": ["नमस्ते", "हैलो", "हैलो, मैं मदद चाहता हूँ", "आप कौन हैं"],
+      "responses": ["नमस्ते! मैं आपका डिजिटल हेल्थ असिस्टेंट हूँ। मैं आपकी सेहत का ख्याल रखने के लिए यहाँ हूँ। क्या मैं आपकी आज किसी तरह मदद कर सकता हूँ?\n\n1) डॉक्टर से अपॉइंटमेंट लेना\n2) अपनी रिपोर्ट समझना\n3) दवा या स्वास्थ्य सलाह चाहिए\n4) तनाव / नींद से जुड़ी सहायता"]
+    },
+    {
+      "id": "appointment_start",
+      "utterances": ["डॉक्टर से अपॉइंटमेंट", "appointment", "डॉक्टर बुक करो", "मुझे डॉक्टर चाहिए"],
+      "responses": ["ज़रूर! कृपया बताइए कि आप किस प्रकार के डॉक्टर से मिलना चाहेंगे:\n• न्यूरोलॉजिस्ट\n• कार्डियोलॉजिस्ट\n• जनरल फिज़िशियन\n• आयुर्वेदिक विशेषज्ञ\n\n(जवाब में डॉक्टर टाइप लिखें)"]
+    },
+    {
+      "id": "appointment_time",
+      "utterances": ["सोमवार सुबह 10 बजे", "बुधवार दोपहर", "कल सुबह"],
+      "responses": ["ठीक है, कृपया अपना नाम और संपर्क नंबर दीजिए ताकि मैं स्लॉट बुक कर सकूँ।"]
+    },
+    {
+      "id": "report_upload",
+      "utterances": ["रिपोर्ट समझो", "रिपोर्ट अपलोड", "मेरी रिपोर्ट"],
+      "responses": ["कृपया अपनी रिपोर्ट अपलोड करें (PDF या इमेज)। मैं उसे विश्लेषित करके सरल भाषा में समझा दूँगा।"]
+    },
+    {
+      "id": "symptom_advice",
+      "utterances": ["सिरदर्द", "थकान", "नींद की कमी", "पेट दर्द", "मुझे दर्द है"],
+      "responses": ["कृपया अपने लक्षण थोड़ा विस्तार से बताइए — कब से हैं, और कितनी तीव्रता है (हल्का/मध्यम/ज्यादा)?" ]
+    },
+    {
+      "id": "relaxation",
+      "utterances": ["तनाव", "तनाव कम करो", "रिलैक्स करो", "नींद में मदद"],
+      "responses": ["क्या आप चाहेंगे कि मैं एक छोटा 5 मिनट रिलैक्सेशन सेशन चलाऊँ?\n\nहाँ / नहीं"]
+    },
+    {
+      "id": "goodbye",
+      "utterances": ["धन्यवाद", "ठीक है", "बाय"],
+      "responses": ["मुझे खुशी है कि मैं आपकी मदद कर सका। स्वस्थ रहें, मुस्कुराते रहें 😊"]
+    }
+  ],
+  "metadata": {
+    "appointment_template": {
+      "status": "booked",
+      "delivery": "3-5 days for in-person follow",
+      "confirm_message": "आपका ऑर्डर सफल — Dr. {doctor} के साथ स्लॉट: {datetime}. संपर्क: {phone}."
+    }
+  }
+}
+
+> यह JSON किसी नो-कोड प्लेटफ़ॉर्म के Generic import के लिये काम आएगा — आप intents में और utterances/responses जोड़कर कस्टमाइज़ कर सकते हैं।
+
+
+
+
+---
+
+2) Node.js (Express) — छोटे उपयोगी कोड पैकेज के साथ
+
+ये कोड एक बुनियादी सर्वर बनाता है: /chat (चैट), /upload-report (रिपोर्ट अपलोड), /book-appointment (अपॉइंटमेंट)। रिपोर्ट फ़ाइलें लोकल में uploads/ में सेव होंगी; आप चाहें तो AWS S3 या किसी अन्य स्टोरेज पर बदल सकते हैं। नीचे के उदाहरण में OpenAI API कॉल के लिए जगह बनाई है — अगर आप किसी अन्य LLM/AI का उपयोग करना चाहें तो उसे बदलें।
+
+सेटअप:
+
+1. Node.js (v16+) चाहिए।
+
+
+2. नई फ़ोल्डर में npm init -y चलाएँ।
+
+
+3. npm install express multer axios dotenv करें।
+
+
+4. .env फ़ाइल में OPENAI_API_KEY (यदि आप OpenAI इस्तेमाल कर रहे हैं) रखें — अन्यथा AI कॉल वाली लाइनें कमेंट करें या बदल दें।
+
+
+5. नीचे का index.js बनाकर चलाएँ: node index.js
+
+
+
+index.js
+
+// index.js
+require('dotenv').config();
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const axios = require('axios');
+
+const app = express();
+app.use(express.json());
+
+// simple in-memory DB (demo only)
+const appointments = [];
+const reports = [];
+
+// Multer setup for uploads
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) { cb(null, uploadDir); },
+  filename: function (req, file, cb) {
+    const unique = Date.now() + '-' + Math.round(Math.random()*1e9);
+    cb(null, unique + '-' + file.originalname);
+  }
+});
+const upload = multer({ storage });
+
+// --- Helper: call to LLM (OpenAI style) ---
+// Replace or adapt per your AI provider. This is a minimal example.
+async function callLLM(prompt) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    // fallback: simple rule-based reply
+    return `आपने लिखा: "${prompt}". (नोट: OpenAI API key सेट नहीं है — इसलिए यह एक डमी उत्तर है।)`;
+  }
+  try {
+    const resp = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-4o-mini', // उदाहरण — बदलें यदि ज़रूरी हो
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 400
+    }, {
+      headers: { Authorization: `Bearer ${key}` }
+    });
+    return resp.data.choices?.[0]?.message?.content || 'क्षमा करें, उत्तर नहीं मिला।';
+  } catch (err) {
+    console.error('LLM error', err.response?.data || err.message);
+    return 'क्षमा करें, मैं अभी उत्तर देने में असमर्थ हूँ।';
+  }
+}
+
+// --- Endpoint: chat ---
+app.post('/chat', async (req, res) => {
+  const { userId, message } = req.body;
+  if (!message) return res.status(400).json({ error: 'message required' });
+
+  // Basic routing based on keywords (you can replace with intent detection via LLM)
+  const lower = message.toLowerCase();
+  if (lower.includes('अपॉइंटमेंट') || lower.includes('डॉक्टर')) {
+    return res.json({ reply: 'डॉक्टर से अपॉइंटमेंट के लिए कृपया बताइए कि आप किस प्रकार के डॉक्टर से मिलना चाहेंगे (न्यूरोलॉजिस्ट / कार्डियोलॉजिस्ट / जनरल फिज़िशियन / आयुर्वेदिक).' });
+  }
+  if (lower.includes('रिपोर्ट') || lower.includes('अपलोड')) {
+    return res.json({ reply: 'कृपया अपनी रिपोर्ट अपलोड करने के लिए /upload-report endpoint का उपयोग करें।' });
+  }
+  if (lower.includes('तनाव') || lower.includes('रिलैक्स')) {
+    return res.json({ reply: 'क्या आप चाहेंगे कि मैं एक छोटा 5 मिनट रिलैक्सेशन सेशन चलाऊँ? (हाँ/नहीं)' });
+  }
+
+  // otherwise ask LLM for a reply
+  const aiReply = await callLLM(`User (${userId}): ${message}\n\nReply in Hindi, concise, helpful and empathetic.`);
+  res.json({ reply: aiReply });
+});
+
+// --- Endpoint: upload report ---
+app.post('/upload-report', upload.single('report'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'report file required (field name: report)' });
+  const record = {
+    id: reports.length + 1,
+    filename: req.file.filename,
+    originalname: req.file.originalname,
+    path: req.file.path,
+    uploadedAt: new Date().toISOString()
+  };
+  reports.push(record);
+
+  // Optionally run an OCR/analysis step or call LLM with extracted text.
+  // For demo, we call LLM with a simple prompt:
+  const summary = await callLLM(`Analyze this medical report filename: ${record.originalname}. Give a short Hindi summary and possible actionable advice (non-diagnostic).`);
+
+  res.json({ message: 'Report uploaded', report: record, ai_summary: summary });
+});
+
+// --- Endpoint: book appointment ---
+app.post('/book-appointment', (req, res) => {
+  const { name, phone, doctorType, datetime } = req.body;
+  if (!name || !phone || !doctorType || !datetime) return res.status(400).json({ error: 'missing fields: name, phone, doctorType, datetime required' });
+
+  const appt = {
+    id: appointments.length + 1,
+    name, phone, doctorType, datetime,
+    status: 'booked',
+    createdAt: new Date().toISOString()
+  };
+  appointments.push(appt);
+  res.json({ message: 'Appointment booked', appointment: appt });
+});
+
+// --- Simple endpoints to view stored data (for testing) ---
+app.get('/appointments', (req, res) => res.json({ appointments }));
+app.get('/reports', (req, res) => res.json({ reports }));
+
+// Start server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`HealthBot server running on port ${PORT}`));
+
+
+---
+
+Notes / Next steps (क्या करना है)
+
+1. इंटेंट डिटेक्शन सुधारें: अभी /chat में सरल कीवर्ड-रूइंग है — आप 
